@@ -197,6 +197,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     private fun handleAppUpdate(data: Map<String, String>) {
         val targetVersionCode = data["version_code"]?.toIntOrNull() ?: 0
         val targetVersionName = data["version_name"] ?: ""
+        // PR dev build 配信用: 指定があれば releases/latest 以外 (dev prerelease asset) から DL
+        val downloadUrl = data["download_url"]
 
         // バージョンチェック
         val currentVersionCode = try {
@@ -214,10 +216,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        Log.d(TAG, "app_update: starting OTA update (target v$targetVersionName/$targetVersionCode)")
+        Log.d(TAG, "app_update: starting OTA update (target v$targetVersionName/$targetVersionCode, url=${downloadUrl ?: "default"})")
         val intent = Intent(this, OtaUpdateService::class.java).apply {
             putExtra("version_code", targetVersionCode)
             putExtra("version_name", targetVersionName)
+            if (!downloadUrl.isNullOrEmpty()) {
+                putExtra("download_url", downloadUrl)
+            }
         }
         startForegroundService(intent)
     }
