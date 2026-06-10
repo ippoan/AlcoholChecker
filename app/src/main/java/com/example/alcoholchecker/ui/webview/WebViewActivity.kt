@@ -541,6 +541,10 @@ class WebViewActivity : AppCompatActivity() {
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
+                getSharedPreferences("device_settings", MODE_PRIVATE)
+                    .getString("settings_token", null)
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { conn.setRequestProperty("X-Device-Token", it) }
                 try {
                     if (conn.responseCode != 200) return@withContext false
                     val json = conn.inputStream.bufferedReader().readText()
@@ -863,12 +867,21 @@ class WebViewActivity : AppCompatActivity() {
                     if (result != null) {
                         val deviceId = result.optString("device_id", "")
                         val tenantId = result.optString("tenant_id", "")
-                        fileLog("parsed: device_id=$deviceId, tenant_id=$tenantId")
+                        // settings_token: 旧 backend は返さない (空のまま動作継続 = 移行期互換)
+                        val settingsToken = result.optString("settings_token", "")
+                        fileLog("parsed: device_id=$deviceId, tenant_id=$tenantId, settings_token=${settingsToken.isNotEmpty()}")
                         if (deviceId.isNotEmpty()) {
                             // 登録成功
                             prefs.edit()
                                 .putString("device_id", deviceId)
                                 .remove("registration_code")
+                                .apply {
+                                    if (settingsToken.isNotEmpty()) {
+                                        putString("settings_token", settingsToken)
+                                    } else {
+                                        remove("settings_token")
+                                    }
+                                }
                                 .apply()
 
                             fileLog("SUCCESS: device_id=$deviceId saved")
@@ -876,10 +889,13 @@ class WebViewActivity : AppCompatActivity() {
                             runOnUiThread {
                                 binding.registrationOverlay.visibility = android.view.View.GONE
                                 // onPageFinished で正しいオリジンで localStorage をセットする
-                                pendingLocalStorage = mapOf(
-                                    "alc_device_tenant_id" to tenantId,
-                                    "alc_device_id" to deviceId
-                                )
+                                pendingLocalStorage = buildMap {
+                                    put("alc_device_tenant_id", tenantId)
+                                    put("alc_device_id", deviceId)
+                                    if (settingsToken.isNotEmpty()) {
+                                        put("alc_device_settings_token", settingsToken)
+                                    }
+                                }
                                 binding.webView.loadUrl("$BASE_URL/")
                                 fetchDeviceSettingsAndAutoStart()
                             }
@@ -923,6 +939,9 @@ class WebViewActivity : AppCompatActivity() {
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.connectTimeout = 5000
                     conn.readTimeout = 5000
+                    prefs.getString("settings_token", null)
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { conn.setRequestProperty("X-Device-Token", it) }
                     try {
                         if (conn.responseCode != 200) {
                             Log.w(TAG, "Device settings API returned ${conn.responseCode}")
@@ -1134,6 +1153,7 @@ class WebViewActivity : AppCompatActivity() {
                 .edit()
                 .putString("device_id", deviceId)
                 .remove("fcm_token_registered")  // 新デバイスにFCMトークンを再登録させる
+                .remove("settings_token")  // 旧デバイスの token は無効 — setSettingsToken で再設定される
                 .apply()
             // デバイス登録直後に着信設定を取得してRoomWatcherを起動
             runOnUiThread { fetchDeviceSettingsAndAutoStart() }
@@ -1143,6 +1163,26 @@ class WebViewActivity : AppCompatActivity() {
         fun getDeviceId(): String {
             return getSharedPreferences("device_settings", MODE_PRIVATE)
                 .getString("device_id", "") ?: ""
+        }
+
+        /** WebView (alc-app) の登録フローで得た settings_token を native 側に同期する。
+         *  空文字で削除 (登録解除時)。setDeviceId の後に呼ぶこと。 */
+        @JavascriptInterface
+        fun setSettingsToken(token: String) {
+            Log.i(TAG, "setSettingsToken: present=${token.isNotEmpty()}")
+            getSharedPreferences("device_settings", MODE_PRIVATE)
+                .edit()
+                .apply {
+                    if (token.isNotEmpty()) putString("settings_token", token)
+                    else remove("settings_token")
+                }
+                .apply()
+        }
+
+        @JavascriptInterface
+        fun getSettingsToken(): String {
+            return getSharedPreferences("device_settings", MODE_PRIVATE)
+                .getString("settings_token", "") ?: ""
         }
 
         @JavascriptInterface

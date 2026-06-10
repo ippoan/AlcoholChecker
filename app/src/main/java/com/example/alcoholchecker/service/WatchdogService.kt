@@ -135,6 +135,9 @@ class WatchdogService : Service() {
                         conn as java.net.HttpURLConnection
                         conn.connectTimeout = 5000
                         conn.readTimeout = 5000
+                        prefs.getString("settings_token", null)
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let { conn.setRequestProperty("X-Device-Token", it) }
                         try {
                             if (conn.responseCode != 200) return@launch
                             conn.inputStream.bufferedReader().readText()
