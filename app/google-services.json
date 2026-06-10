@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "708956652199",
+    "project_id": "alc-fcm",
+    "storage_bucket": "alc-fcm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:708956652199:android:fa9eec7a91b63faf569182",
+        "android_client_info": {
+          "package_name": "com.example.alcoholchecker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDVuTCo1sIPEsvIVbS6pm6BDdEmFwXLg9I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

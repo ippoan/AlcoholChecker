@@ -1,0 +1,30 @@
+[
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_login.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_alcohol_check.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_alcohol_check.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_ic_card_read.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_ic_card_read.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_webview.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_webview.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_incoming_call.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_incoming_call.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_home.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_home.xml"
+    },
+    {
+        "merged": "com.example.alcoholchecker.app-mergeReleaseResources-66:/layout/activity_history.xml",
+        "source": "com.example.alcoholchecker.app-main-68:/layout/activity_history.xml"
+    }
+]

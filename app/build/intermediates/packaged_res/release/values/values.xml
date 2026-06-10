@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="force_disable_nfc_reading_position_guide">true</bool>
+    <color name="accent">#FF6F00</color>
+    <color name="primary">#1976D2</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="result_ng">#F44336</color>
+    <color name="result_ok">#4CAF50</color>
+    <color name="white">#FFFFFF</color>
+    <string name="app_name">アルコールチェッカー</string>
+    <string name="gcm_defaultSenderId" translatable="false">708956652199</string>
+    <string name="google_api_key" translatable="false">AIzaSyDVuTCo1sIPEsvIVbS6pm6BDdEmFwXLg9I</string>
+    <string name="google_app_id" translatable="false">1:708956652199:android:fa9eec7a91b63faf569182</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyDVuTCo1sIPEsvIVbS6pm6BDdEmFwXLg9I</string>
+    <string name="google_storage_bucket" translatable="false">alc-fcm.firebasestorage.app</string>
+    <string name="project_id" translatable="false">alc-fcm</string>
+    <style name="Theme.AlcoholChecker" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/accent</item>
+    </style>
+    <style name="Theme.AlcoholChecker.NoActionBar" parent="Theme.AlcoholChecker">
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
