@@ -7,14 +7,27 @@ on:
     paths:
       - 'app/**'
       - '.github/workflows/release.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
+  pull-requests: write
+
+concurrency:
+  # gh-pages push race を防ぐ。master は master 自身、PR は PR 番号ごとに直列化。
+  group: release-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    # fork からの PR は keystore secret が無いので skip。同 repo の PR は dev build が走る。
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,11 +35,37 @@ jobs:
 
       - name: Extract version from build.gradle.kts
         id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION_NAME}+${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          VERSION_NAME=$(grep -E '^[[:space:]]*versionName[[:space:]]*=' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$EVENT" = "pull_request" ]; then
+            # PR ごとの dev build。tag に `-` を含むので releases/latest に出ない
+            # (= dev 端末 OTA の DL 先 releases/latest/app-release.apk に影響しない)。
+            TAG="dev-pr${PR_NUMBER}-${RUN_NUMBER}"
+            PRERELEASE=true
+            REL_DIR="dev/pr${PR_NUMBER}"
+          else
+            TAG="v${VERSION_NAME}+${RUN_NUMBER}"
+            PRERELEASE=false
+            REL_DIR=""
+          fi
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
-          echo "Version: v${VERSION_NAME}+${{ github.run_number }}"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "rel_dir=${REL_DIR}" >> "$GITHUB_OUTPUT"
+          PAGES_ROOT="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          if [ -n "$REL_DIR" ]; then
+            echo "apk_url=${PAGES_ROOT}/${REL_DIR}/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "qr_url=${PAGES_ROOT}/${REL_DIR}/app-release-qr.png" >> "$GITHUB_OUTPUT"
+          else
+            echo "apk_url=${PAGES_ROOT}/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "qr_url=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Version: ${TAG}"
 
       - uses: actions/setup-java@v4
         with:
@@ -42,6 +81,9 @@ jobs:
         run: echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
 
       - name: Set versionCode from run_number
+        # PR build / master build で run_number カウンタを共有するため、
+        # PR build (N) の後の master build (N+k) は必ず大きい versionCode になり
+        # OTA の versionCode 単調増加が保たれる。
         run: sed -i "s/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
 
       - name: Build release APK
@@ -74,10 +116,19 @@ jobs:
           sha256sum app/build/outputs/apk/release/app-release.apk | awk '{print $1}' > app/build/outputs/apk/release/app-release.apk.sha256
           echo "APK_SHA256=$(cat app/build/outputs/apk/release/app-release.apk.sha256)" >> "$GITHUB_ENV"
 
+      - name: Generate install QR (PR dev build)
+        if: github.event_name == 'pull_request'
+        env:
+          QR_TARGET: ${{ steps.version.outputs.apk_url }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qrencode
+          qrencode -o app/build/outputs/apk/release/app-release-qr.png -s 8 -m 2 "$QR_TARGET"
+
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
           files: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/app-release.apk.sha256
@@ -88,24 +139,111 @@ jobs:
             ${{ env.APK_SHA256 }}
             ```
 
+      - name: Comment APK link on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ steps.version.outputs.version }}
+          APK_SHA256: ${{ env.APK_SHA256 }}
+          APK_URL: ${{ steps.version.outputs.apk_url }}
+          QR_URL: ${{ steps.version.outputs.qr_url }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const sha = process.env.APK_SHA256;
+            const apk = process.env.APK_URL;
+            const qr  = process.env.QR_URL;
+            const body = [
+              `### Dev APK ready (staging)`,
+              ``,
+              `- Tag: \`${tag}\` (prerelease)`,
+              `- sha256: \`${sha}\``,
+              ``,
+              `**端末カメラで QR を読むと APK 直 DL が始まる** (「提供元不明のアプリ」を許可してインストール):`,
+              ``,
+              `<img src="${qr}" alt="Install QR" width="260">`,
+              ``,
+              `または直リンク: ${apk}`,
+              ``,
+              `> dev 端末 (\`is_dev_device=true\`) へはこの build を自動 OTA push 済み。`,
+              `> その他 (prod) 端末への配信は Release Wave / 管理画面トリガーで行う (master merge では自動配信しない)。`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+
       - name: Deploy APK to GitHub Pages
+        env:
+          REL_DIR: ${{ steps.version.outputs.rel_dir }}
+          TAG: ${{ steps.version.outputs.version }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk /tmp/app-release.apk
+          set -euo pipefail
+          mkdir -p /tmp/dist
+          cp app/build/outputs/apk/release/app-release.apk /tmp/dist/
+          cp app/build/outputs/apk/release/app-release.apk.sha256 /tmp/dist/
+          if [ -f app/build/outputs/apk/release/app-release-qr.png ]; then
+            cp app/build/outputs/apk/release/app-release-qr.png /tmp/dist/
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash --include-untracked
+          git stash --include-untracked || true
           git fetch origin gh-pages
           git checkout gh-pages
-          cp /tmp/app-release.apk app-release.apk
-          git add app-release.apk
-          git commit -m "Update APK to ${{ steps.version.outputs.version }}"
-          git push origin gh-pages
+          git pull --ff-only origin gh-pages
+          TARGET_DIR="${REL_DIR:-.}"
+          mkdir -p "${TARGET_DIR}"
+          cp /tmp/dist/app-release.apk "${TARGET_DIR}/app-release.apk"
+          cp /tmp/dist/app-release.apk.sha256 "${TARGET_DIR}/app-release.apk.sha256" || true
+          if [ -f /tmp/dist/app-release-qr.png ]; then
+            cp /tmp/dist/app-release-qr.png "${TARGET_DIR}/app-release-qr.png"
+          fi
+          git add "${TARGET_DIR}"
+          git commit -m "Update APK to ${TAG} (${TARGET_DIR})"
+          # concurrent push race の軽い retry
+          for attempt in 1 2 3; do
+            if git push origin gh-pages; then
+              exit 0
+            fi
+            echo "push failed, attempt ${attempt} — rebasing"
+            git pull --rebase origin gh-pages || true
+            sleep 2
+          done
+          echo "::error::Failed to push gh-pages after 3 attempts"
+          exit 1
 
-      - name: Trigger OTA update for dev devices
+      # dev 端末 (is_dev_device=true) へは PR build を即 OTA push する。
+      # download_url は prerelease asset (gh-pages より伝播が速い)。
+      # backend (rust-alc-api) が download_url 未対応の間、旧アプリは
+      # releases/latest に fallback する (1 サイクルで自己回復、PR description 参照)。
+      #
+      # master merge では OTA を発火しない: その他 (prod) 端末への配信は
+      # Release Wave / 管理画面の trigger-update に分離 (dev/prod 配信分離)。
+      - name: Trigger OTA update for dev devices (PR build)
+        if: github.event_name == 'pull_request'
+        env:
+          TAG: ${{ steps.version.outputs.version }}
         run: |
-          curl -s -X POST "https://alc-app.m-tama-ramu.workers.dev/api/devices/trigger-update-dev" \
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/app-release.apk"
+          # alc-app の workers.dev サブドメインは停止済み (404 placeholder) — custom domain を使う
+          curl -s -X POST "https://alc.ippoan.org/api/devices/trigger-update-dev" \
             -H "Content-Type: application/json" \
             -H "X-Internal-Secret: ${{ secrets.FCM_INTERNAL_SECRET }}" \
-            -d "{\"version_code\":${{ github.run_number }},\"version_name\":\"${{ steps.version.outputs.version_name }}\"}" \
+            -d "{\"version_code\":${{ github.run_number }},\"version_name\":\"${TAG}\",\"download_url\":\"${DOWNLOAD_URL}\"}" \
             | tee /dev/stderr | jq .
-          echo "OTA trigger sent for dev devices (${{ steps.version.outputs.version }})"
+          echo "OTA trigger sent for dev devices (${TAG})"
+
+  auto-merge:
+    # build (+ dev 配信) が green になってから PR を auto-merge queue に入れる。
+    # App token (CI_APP_ID/KEY, org secret) で merge するため、merge commit の
+    # push: master event が release.yml の master run (stable 更新 + dev OTA) を
+    # 発火させられる (github.token actor だと chain しない)。
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    uses: ippoan/ci-workflows/.github/workflows/auto-merge.yml@main
+    secrets:
+      CI_APP_ID: ${{ secrets.CI_APP_ID }}
+      CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+      TAG_RELEASE_PAT: ${{ secrets.TAG_RELEASE_PAT }}

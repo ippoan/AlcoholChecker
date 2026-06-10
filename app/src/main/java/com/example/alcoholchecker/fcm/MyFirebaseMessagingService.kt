@@ -19,7 +19,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "FCMService"
-        private const val API_URL = "https://alc-app.m-tama-ramu.workers.dev"
+        private const val API_URL = "https://alc.ippoan.org"
     }
 
     override fun onNewToken(token: String) {
@@ -144,6 +144,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         conn as java.net.HttpURLConnection
                         conn.connectTimeout = 5000
                         conn.readTimeout = 5000
+                        prefs.getString("settings_token", null)
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let { conn.setRequestProperty("X-Device-Token", it) }
                         try {
                             if (conn.responseCode != 200) return@launch
                             conn.inputStream.bufferedReader().readText()
@@ -194,6 +197,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     private fun handleAppUpdate(data: Map<String, String>) {
         val targetVersionCode = data["version_code"]?.toIntOrNull() ?: 0
         val targetVersionName = data["version_name"] ?: ""
+        // PR dev build 配信用: 指定があれば releases/latest 以外 (dev prerelease asset) から DL。
+        // 自 repo の GitHub Releases asset のみ許可 (それ以外は無視して releases/latest fallback)
+        val downloadUrl = data["download_url"]?.takeIf { url ->
+            runCatching {
+                val u = java.net.URI(url)
+                u.scheme == "https" && u.host == "github.com" &&
+                    u.path?.startsWith("/ippoan/AlcoholChecker/releases/download/") == true
+            }.getOrDefault(false)
+        }
 
         // バージョンチェック
         val currentVersionCode = try {
@@ -211,10 +223,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        Log.d(TAG, "app_update: starting OTA update (target v$targetVersionName/$targetVersionCode)")
+        Log.d(TAG, "app_update: starting OTA update (target v$targetVersionName/$targetVersionCode, url=${downloadUrl ?: "default"})")
         val intent = Intent(this, OtaUpdateService::class.java).apply {
             putExtra("version_code", targetVersionCode)
             putExtra("version_name", targetVersionName)
+            if (!downloadUrl.isNullOrEmpty()) {
+                putExtra("download_url", downloadUrl)
+            }
         }
         startForegroundService(intent)
     }

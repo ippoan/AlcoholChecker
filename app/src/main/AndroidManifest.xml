@@ -59,7 +59,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="alc-app.m-tama-ramu.workers.dev"
+                    android:host="alc.ippoan.org"
                     android:pathPrefix="/device-claim" />
             </intent-filter>
             <intent-filter>
