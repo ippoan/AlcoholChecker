@@ -195,9 +195,11 @@ class WebViewActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "WebViewActivity"
-        private const val BASE_URL = "https://alc-app.m-tama-ramu.workers.dev"
+        // alc-app の workers.dev サブドメインは custom domain 移行で停止済み (404)。
+        // assetlinks.json も alc.ippoan.org 側で配信されている。
+        private const val BASE_URL = "https://alc.ippoan.org"
         private const val SIGNALING_URL = "https://alc-signaling.m-tama-ramu.workers.dev"
-        private const val API_URL = "https://alc-app.m-tama-ramu.workers.dev"
+        private const val API_URL = "https://alc.ippoan.org"
         const val ACTION_NAVIGATE_TENKO = "com.example.alcoholchecker.NAVIGATE_TENKO"
         const val EXTRA_ROOM_ID = "extra_room_id"
 

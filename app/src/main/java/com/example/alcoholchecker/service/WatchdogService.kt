@@ -29,7 +29,7 @@ class WatchdogService : Service() {
         private const val HEARTBEAT_TIMEOUT_MS = 60_000L
         private const val CHECK_INTERVAL_MS = 15_000L
         private const val SIGNALING_URL = "https://alc-signaling.m-tama-ramu.workers.dev"
-        private const val API_URL = "https://alc-app.m-tama-ramu.workers.dev"
+        private const val API_URL = "https://alc.ippoan.org"
         const val ACTION_START_ROOM_WATCHER = "com.example.alcoholchecker.START_ROOM_WATCHER"
 
         private val lastHeartbeat = AtomicLong(0L)

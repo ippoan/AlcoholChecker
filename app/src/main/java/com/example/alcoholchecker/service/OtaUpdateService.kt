@@ -27,7 +27,7 @@ class OtaUpdateService : Service() {
         private const val CHANNEL_ID = "ota_update"
         private const val NOTIFICATION_ID = 9001
         private const val DEFAULT_APK_URL =
-            "https://github.com/yhonda-ohishi-alc/AlcoholChecker/releases/latest/download/app-release.apk"
+            "https://github.com/ippoan/AlcoholChecker/releases/latest/download/app-release.apk"
         const val PREFS_NAME = "device_settings"
     }
 

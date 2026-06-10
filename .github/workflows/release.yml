@@ -227,7 +227,8 @@ jobs:
           TAG: ${{ steps.version.outputs.version }}
         run: |
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/app-release.apk"
-          curl -s -X POST "https://alc-app.m-tama-ramu.workers.dev/api/devices/trigger-update-dev" \
+          # alc-app の workers.dev サブドメインは停止済み (404 placeholder) — custom domain を使う
+          curl -s -X POST "https://alc.ippoan.org/api/devices/trigger-update-dev" \
             -H "Content-Type: application/json" \
             -H "X-Internal-Secret: ${{ secrets.FCM_INTERNAL_SECRET }}" \
             -d "{\"version_code\":${{ github.run_number }},\"version_name\":\"${TAG}\",\"download_url\":\"${DOWNLOAD_URL}\"}" \
