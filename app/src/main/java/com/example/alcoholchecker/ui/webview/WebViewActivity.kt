@@ -38,6 +38,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.alcoholchecker.ble.BleBridgeServer
 import com.example.alcoholchecker.ble.BleDeviceManager
 import com.example.alcoholchecker.databinding.ActivityWebviewBinding
+import com.example.alcoholchecker.net.DeviceToken
 import com.example.alcoholchecker.nfc.CardType
 import com.example.alcoholchecker.nfc.NfcBridgeServer
 import com.example.alcoholchecker.nfc.NfcReader
@@ -547,6 +548,9 @@ class WebViewActivity : AppCompatActivity() {
                     .getString("settings_token", null)
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { conn.setRequestProperty("X-Device-Token", it) }
+                // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                DeviceToken.get(this@WebViewActivity)
+                    ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                 try {
                     if (conn.responseCode != 200) return@withContext false
                     val json = conn.inputStream.bufferedReader().readText()
@@ -871,7 +875,11 @@ class WebViewActivity : AppCompatActivity() {
                         val tenantId = result.optString("tenant_id", "")
                         // settings_token: 旧 backend は返さない (空のまま動作継続 = 移行期互換)
                         val settingsToken = result.optString("settings_token", "")
-                        fileLog("parsed: device_id=$deviceId, tenant_id=$tenantId, settings_token=${settingsToken.isNotEmpty()}")
+                        // device credential (auth-worker device JWT 用、Refs rust-alc-api#434 caller #5)。
+                        // 旧 backend は返さない (空のまま = 従来 X-Device-Token 経路で継続)。
+                        val authDeviceId = result.optString("auth_device_id", "")
+                        val deviceSecret = result.optString("device_secret", "")
+                        fileLog("parsed: device_id=$deviceId, tenant_id=$tenantId, settings_token=${settingsToken.isNotEmpty()}, device_cred=${authDeviceId.isNotEmpty() && deviceSecret.isNotEmpty()}")
                         if (deviceId.isNotEmpty()) {
                             // 登録成功
                             prefs.edit()
@@ -882,6 +890,11 @@ class WebViewActivity : AppCompatActivity() {
                                         putString("settings_token", settingsToken)
                                     } else {
                                         remove("settings_token")
+                                    }
+                                    // device credential は返ってきた時だけ保存 (空で上書き・削除しない)。
+                                    if (authDeviceId.isNotEmpty() && deviceSecret.isNotEmpty()) {
+                                        putString("auth_device_id", authDeviceId)
+                                        putString("device_secret", deviceSecret)
                                     }
                                 }
                                 .apply()
@@ -944,6 +957,9 @@ class WebViewActivity : AppCompatActivity() {
                     prefs.getString("settings_token", null)
                         ?.takeIf { it.isNotEmpty() }
                         ?.let { conn.setRequestProperty("X-Device-Token", it) }
+                    // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                    DeviceToken.get(this@WebViewActivity)
+                        ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                     try {
                         if (conn.responseCode != 200) {
                             Log.w(TAG, "Device settings API returned ${conn.responseCode}")
@@ -1031,6 +1047,9 @@ class WebViewActivity : AppCompatActivity() {
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
+                // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                DeviceToken.get(this@WebViewActivity)
+                    ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                 conn.doOutput = true
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
@@ -1066,6 +1085,9 @@ class WebViewActivity : AppCompatActivity() {
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
+                // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                DeviceToken.get(this@WebViewActivity)
+                    ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                 conn.doOutput = true
                 conn.connectTimeout = 10_000
                 conn.readTimeout = 10_000
