@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import com.example.alcoholchecker.call.IncomingCallActivity
 import com.example.alcoholchecker.call.RoomWatcher
+import com.example.alcoholchecker.net.DeviceToken
 import com.example.alcoholchecker.service.OtaUpdateService
 import com.example.alcoholchecker.service.WatchdogService
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -181,6 +182,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "PUT"
             conn.setRequestProperty("Content-Type", "application/json")
+            // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+            DeviceToken.get(this@MyFirebaseMessagingService)
+                ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.doOutput = true
@@ -252,6 +256,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
+                // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                DeviceToken.get(this@MyFirebaseMessagingService)
+                    ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 conn.doOutput = true
@@ -277,6 +284,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "PUT"
                     conn.setRequestProperty("Content-Type", "application/json")
+                    // device JWT (lockdown 対応、Refs rust-alc-api#434 caller #5)。無ければ付けない。
+                    DeviceToken.get(context)
+                        ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                     conn.connectTimeout = 5000
                     conn.readTimeout = 5000
                     conn.doOutput = true
