@@ -12,6 +12,7 @@ import android.util.Log
 import com.example.alcoholchecker.call.IncomingCallActivity
 import com.example.alcoholchecker.call.RoomWatcher
 import com.example.alcoholchecker.net.DeviceToken
+import com.example.alcoholchecker.net.EnvironmentStore
 import com.example.alcoholchecker.ui.webview.WebViewActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,9 @@ import kotlin.system.exitProcess
 
 class WatchdogService : Service() {
 
+    // prod/staging で異なるため EnvironmentStore から動的解決する (Refs ippoan/rust-alc-api#480)。
+    private fun apiBase(): String = EnvironmentStore.apiBase(this)
+
     companion object {
         private const val TAG = "WatchdogService"
         private const val CHANNEL_ID = "watchdog"
@@ -30,7 +34,6 @@ class WatchdogService : Service() {
         private const val HEARTBEAT_TIMEOUT_MS = 60_000L
         private const val CHECK_INTERVAL_MS = 15_000L
         private const val SIGNALING_URL = "https://alc-signaling.m-tama-ramu.workers.dev"
-        private const val API_URL = "https://alc.ippoan.org"
         const val ACTION_START_ROOM_WATCHER = "com.example.alcoholchecker.START_ROOM_WATCHER"
 
         private val lastHeartbeat = AtomicLong(0L)
@@ -131,7 +134,7 @@ class WatchdogService : Service() {
         // サーバーから設定を取得して判断
         scope.launch {
             try {
-                val response = java.net.URL("$API_URL/api/devices/settings/$deviceId")
+                val response = java.net.URL("${apiBase()}/api/devices/settings/$deviceId")
                     .openConnection().let { conn ->
                         conn as java.net.HttpURLConnection
                         conn.connectTimeout = 5000

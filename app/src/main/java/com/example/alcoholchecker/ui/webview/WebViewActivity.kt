@@ -38,7 +38,9 @@ import androidx.lifecycle.lifecycleScope
 import com.example.alcoholchecker.ble.BleBridgeServer
 import com.example.alcoholchecker.ble.BleDeviceManager
 import com.example.alcoholchecker.databinding.ActivityWebviewBinding
+import com.example.alcoholchecker.net.AppEnvironment
 import com.example.alcoholchecker.net.DeviceToken
+import com.example.alcoholchecker.net.EnvironmentStore
 import com.example.alcoholchecker.nfc.CardType
 import com.example.alcoholchecker.nfc.NfcBridgeServer
 import com.example.alcoholchecker.nfc.NfcReader
@@ -194,13 +196,14 @@ class WebViewActivity : AppCompatActivity() {
         }
     }
 
+    // BASE_URL / API_URL は prod/staging で異なるため EnvironmentStore から動的解決する
+    // (Refs ippoan/rust-alc-api#480)。SIGNALING_URL は cf-alc-signaling が単一環境運用の
+    // ため環境非依存の定数のまま。
+    private fun apiBase(): String = EnvironmentStore.apiBase(this)
+
     companion object {
         private const val TAG = "WebViewActivity"
-        // alc-app の workers.dev サブドメインは custom domain 移行で停止済み (404)。
-        // assetlinks.json も alc.ippoan.org 側で配信されている。
-        private const val BASE_URL = "https://alc.ippoan.org"
         private const val SIGNALING_URL = "https://alc-signaling.m-tama-ramu.workers.dev"
-        private const val API_URL = "https://alc.ippoan.org"
         const val ACTION_NAVIGATE_TENKO = "com.example.alcoholchecker.NAVIGATE_TENKO"
         const val EXTRA_ROOM_ID = "extra_room_id"
 
@@ -252,11 +255,28 @@ class WebViewActivity : AppCompatActivity() {
             // App Link (device-claim) で起動された場合はそのURLを開く
             val deepLinkUrl = intent?.data?.toString()
             if (deepLinkUrl != null && deepLinkUrl.contains("/device-claim")) {
+                applyEnvironmentFromDeepLink(deepLinkUrl)
                 requestPhonePermissionIfNeeded()
                 binding.webView.loadUrl(deepLinkUrl)
             } else {
-                binding.webView.loadUrl("$BASE_URL/")
+                binding.webView.loadUrl("${apiBase()}/")
             }
+        }
+    }
+
+    /**
+     * device-claim App Link の host (alc.ippoan.org / alc-staging.ippoan.org) から
+     * [AppEnvironment] を確定し、変化があれば永続化する。
+     * 以降の全 API 呼び出しは [apiBase] 経由でこの環境を参照する (Refs ippoan/rust-alc-api#480)。
+     * 未知の host (env 判定不能) は何もしない (前回の環境を維持)。
+     */
+    private fun applyEnvironmentFromDeepLink(deepLinkUrl: String) {
+        val host = runCatching { java.net.URI(deepLinkUrl).host }.getOrNull()
+        val env = AppEnvironment.fromHost(host) ?: return
+        if (env != EnvironmentStore.get(this)) {
+            EnvironmentStore.set(this, env)
+            DeviceToken.clearCache()
+            fileLog("environment switched to $env (host=$host)")
         }
     }
 
@@ -492,6 +512,7 @@ class WebViewActivity : AppCompatActivity() {
         // App Link で既存アクティビティに戻ってきた場合
         val deepLinkUrl = intent?.data?.toString()
         if (deepLinkUrl != null && deepLinkUrl.contains("/device-claim")) {
+            applyEnvironmentFromDeepLink(deepLinkUrl)
             requestPhonePermissionIfNeeded()
             binding.webView.loadUrl(deepLinkUrl)
             return
@@ -520,7 +541,7 @@ class WebViewActivity : AppCompatActivity() {
 
         if (deviceId.isNullOrEmpty()) {
             // デバイス未登録 → 通常遷移
-            binding.webView.loadUrl("$BASE_URL/")
+            binding.webView.loadUrl("${apiBase()}/")
             return
         }
 
@@ -528,10 +549,10 @@ class WebViewActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val hasManagerRole = checkDeviceManagerRole(deviceId)
             val url = if (hasManagerRole) {
-                if (roomId != null) "$BASE_URL/?mode=incoming_call&room=$roomId"
-                else "$BASE_URL/?mode=incoming_call"
+                if (roomId != null) "${apiBase()}/?mode=incoming_call&room=$roomId"
+                else "${apiBase()}/?mode=incoming_call"
             } else {
-                "$BASE_URL/"
+                "${apiBase()}/"
             }
             runOnUiThread { binding.webView.loadUrl(url) }
         }
@@ -540,7 +561,7 @@ class WebViewActivity : AppCompatActivity() {
     private suspend fun checkDeviceManagerRole(deviceId: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val url = java.net.URL("$API_URL/api/devices/settings/$deviceId")
+                val url = java.net.URL("${apiBase()}/api/devices/settings/$deviceId")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
@@ -814,7 +835,7 @@ class WebViewActivity : AppCompatActivity() {
         fileLog("autoRegisterDeviceOwner: registration_code=${registrationCode != null}")
         if (registrationCode.isNullOrEmpty()) {
             fileLog("No registration_code — loading WebView as fallback")
-            binding.webView.loadUrl("$BASE_URL/")
+            binding.webView.loadUrl("${apiBase()}/")
             fetchDeviceSettingsAndAutoStart()
             return
         }
@@ -841,7 +862,7 @@ class WebViewActivity : AppCompatActivity() {
 
                 try {
                     val result = withContext(Dispatchers.IO) {
-                        val url = java.net.URL("$API_URL/api/devices/register/claim")
+                        val url = java.net.URL("${apiBase()}/api/devices/register/claim")
                         val conn = url.openConnection() as java.net.HttpURLConnection
                         conn.requestMethod = "POST"
                         conn.setRequestProperty("Content-Type", "application/json")
@@ -920,7 +941,7 @@ class WebViewActivity : AppCompatActivity() {
                                         put("alc_kiosk_device_secret", deviceSecret)
                                     }
                                 }
-                                binding.webView.loadUrl("$BASE_URL/")
+                                binding.webView.loadUrl("${apiBase()}/")
                                 fetchDeviceSettingsAndAutoStart()
                             }
                             return@launch // 成功 — ループ終了
@@ -942,7 +963,7 @@ class WebViewActivity : AppCompatActivity() {
                 // 5秒後にフォールバックで WebView 読み込み
                 binding.root.postDelayed({
                     binding.registrationOverlay.visibility = android.view.View.GONE
-                    binding.webView.loadUrl("$BASE_URL/")
+                    binding.webView.loadUrl("${apiBase()}/")
                 }, 5000)
             }
         }
@@ -959,7 +980,7 @@ class WebViewActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val response = withContext(Dispatchers.IO) {
-                    val url = java.net.URL("$API_URL/api/devices/settings/$deviceId")
+                    val url = java.net.URL("${apiBase()}/api/devices/settings/$deviceId")
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.connectTimeout = 5000
                     conn.readTimeout = 5000
@@ -1052,7 +1073,7 @@ class WebViewActivity : AppCompatActivity() {
     private fun reportWatchdogState(deviceId: String, running: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val url = java.net.URL("$API_URL/api/devices/report-watchdog")
+                val url = java.net.URL("${apiBase()}/api/devices/report-watchdog")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -1090,7 +1111,7 @@ class WebViewActivity : AppCompatActivity() {
                 val isDevDevice = getSharedPreferences("device_settings", MODE_PRIVATE)
                     .getBoolean("is_dev_device", false)
 
-                val url = java.net.URL("$API_URL/api/devices/report-version")
+                val url = java.net.URL("${apiBase()}/api/devices/report-version")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")

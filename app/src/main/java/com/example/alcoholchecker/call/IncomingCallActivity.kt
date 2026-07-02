@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.alcoholchecker.databinding.ActivityIncomingCallBinding
+import com.example.alcoholchecker.net.EnvironmentStore
 import com.example.alcoholchecker.ui.webview.WebViewActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -164,7 +165,7 @@ class IncomingCallActivity : AppCompatActivity() {
         }
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val url = java.net.URL("https://alc-app.m-tama-ramu.workers.dev/api/devices/fcm-dismiss-test")
+                val url = java.net.URL("${EnvironmentStore.apiBase(this@IncomingCallActivity)}/api/devices/fcm-dismiss-test")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")

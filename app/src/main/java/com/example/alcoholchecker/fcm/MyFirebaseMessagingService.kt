@@ -7,6 +7,7 @@ import android.util.Log
 import com.example.alcoholchecker.call.IncomingCallActivity
 import com.example.alcoholchecker.call.RoomWatcher
 import com.example.alcoholchecker.net.DeviceToken
+import com.example.alcoholchecker.net.EnvironmentStore
 import com.example.alcoholchecker.service.OtaUpdateService
 import com.example.alcoholchecker.service.WatchdogService
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -18,9 +19,11 @@ import org.json.JSONArray
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
+    // prod/staging で異なるため EnvironmentStore から動的解決する (Refs ippoan/rust-alc-api#480)。
+    private fun apiBase(): String = EnvironmentStore.apiBase(this)
+
     companion object {
         private const val TAG = "FCMService"
-        private const val API_URL = "https://alc.ippoan.org"
     }
 
     override fun onNewToken(token: String) {
@@ -140,7 +143,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             if (deviceId.isNullOrEmpty()) return@launch
 
             try {
-                val response = java.net.URL("$API_URL/api/devices/settings/$deviceId")
+                val response = java.net.URL("${apiBase()}/api/devices/settings/$deviceId")
                     .openConnection().let { conn ->
                         conn as java.net.HttpURLConnection
                         conn.connectTimeout = 5000
@@ -183,7 +186,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     private fun reportWatchdogState(deviceId: String, running: Boolean) {
         try {
-            val url = java.net.URL("$API_URL/api/devices/report-watchdog")
+            val url = java.net.URL("${apiBase()}/api/devices/report-watchdog")
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.requestMethod = "PUT"
             conn.setRequestProperty("Content-Type", "application/json")
@@ -257,7 +260,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     private fun registerTokenWithBackend(deviceId: String, token: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val url = java.net.URL("$API_URL/api/devices/register-fcm-token")
+                val url = java.net.URL("${apiBase()}/api/devices/register-fcm-token")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -285,7 +288,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         fun register(context: Context, deviceId: String, token: String) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val url = java.net.URL("$API_URL/api/devices/register-fcm-token")
+                    val url = java.net.URL("${EnvironmentStore.apiBase(context)}/api/devices/register-fcm-token")
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "PUT"
                     conn.setRequestProperty("Content-Type", "application/json")

@@ -22,7 +22,6 @@ import java.net.URL
  * rust-alc-api の devices テーブル id (`device_id`) とは別系統。混同しないこと。
  */
 object DeviceToken {
-    private const val AUTH_WORKER_URL = "https://auth.ippoan.org"
     private const val PREFS = "device_settings"
     private const val KEY_AUTH_DEVICE_ID = "auth_device_id"
     private const val KEY_DEVICE_SECRET = "device_secret"
@@ -52,7 +51,7 @@ object DeviceToken {
         if (jwt != null && cachedExpMs - REFRESH_BEFORE_MS > now) return jwt
 
         return try {
-            val url = URL("$AUTH_WORKER_URL/device/token")
+            val url = URL("${EnvironmentStore.authWorkerUrl(context)}/device/token")
             val conn = url.openConnection() as HttpURLConnection
             try {
                 conn.requestMethod = "POST"
