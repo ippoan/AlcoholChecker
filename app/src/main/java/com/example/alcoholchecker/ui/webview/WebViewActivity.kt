@@ -1261,6 +1261,34 @@ class WebViewActivity : AppCompatActivity() {
                 .getString("device_id", "") ?: ""
         }
 
+        /** web claim フローで得た auth-worker device credential を native に渡す。
+         *  DeviceToken がこれを使って device JWT を mint する (lockdown 対応、
+         *  Refs rust-alc-api#434 / #480)。無いと settings / register-fcm-token 等の
+         *  認証必須呼び出しが 403 になり FCM 登録が通らない。
+         *
+         *  呼び出し順の注意: setDeviceId が settings_token / fcm marker を remove するため、
+         *  web 側は setDeviceId → setSettingsToken → setDeviceCredential の順で呼ぶこと。
+         *  空文字を渡すと credential を削除する (登録解除時)。値は log に出さない (presence のみ)。
+         *  write-only: 対応する getter は意図的に用意しない。 */
+        @JavascriptInterface
+        fun setDeviceCredential(authDeviceId: String, deviceSecret: String) {
+            Log.i(TAG, "setDeviceCredential: present=${authDeviceId.isNotEmpty() && deviceSecret.isNotEmpty()}")
+            getSharedPreferences("device_settings", MODE_PRIVATE).edit().apply {
+                if (authDeviceId.isNotEmpty() && deviceSecret.isNotEmpty()) {
+                    putString("auth_device_id", authDeviceId)
+                    putString("device_secret", deviceSecret)
+                } else {
+                    remove("auth_device_id")
+                    remove("device_secret")
+                }
+            }.apply()
+            DeviceToken.clearCache()
+            // setDeviceId が credential 無しで走らせた設定取得を再実行する。
+            // registerFcmTokenIfNeeded は成功時マーカーで skip 判定するので冪等
+            // (403 で失敗していた登録だけが device JWT 付きで再試行される)。
+            runOnUiThread { fetchDeviceSettingsAndAutoStart() }
+        }
+
         /** 端末登録を native 側で完全にリセットする (デバイス設定タブのリセットボタン用)。
          *  device_id / settings_token / FCM 登録済みマーク / kiosk credential を消し、
          *  RoomWatcher を停止する。WebView 側の localStorage は呼び出し元 (deactivateDevice)
