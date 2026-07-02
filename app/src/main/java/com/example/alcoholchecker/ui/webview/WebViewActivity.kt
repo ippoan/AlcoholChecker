@@ -1456,9 +1456,15 @@ class WebViewActivity : AppCompatActivity() {
                     val appVer = runCatching {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     }.getOrNull() ?: "?"
+                    // device_cred = device JWT mint 用 credential (auth_device_id + device_secret) の有無。
+                    // false なら web claim → native の setDeviceCredential 受け渡しが未達
+                    // (= register-fcm-token 403 / settings 401 の切り分け用、Refs rust-alc-api#480)。
+                    val hasCred = !prefs.getString("auth_device_id", null).isNullOrEmpty() &&
+                        !prefs.getString("device_secret", null).isNullOrEmpty()
                     val lines = mutableListOf<String>()
                     lines.add("app=$appVer env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
                         "settings_token=${!prefs.getString("settings_token", null).isNullOrEmpty()} " +
+                        "device_cred=$hasCred " +
                         "always_on=${prefs.getBoolean("always_on", true)} " +
                         "fcm_registered=${!prefs.getString("fcm_token_registered", null).isNullOrEmpty()} " +
                         "roomWatcher=${roomWatcher != null} wsConnected=${roomWatcher?.isConnected == true}")
