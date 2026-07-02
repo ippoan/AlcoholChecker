@@ -1011,7 +1011,18 @@ class WebViewActivity : AppCompatActivity() {
                     } finally {
                         conn.disconnect()
                     }
-                } ?: return@launch
+                }
+
+                // 設定 API が非200/取得不能 (staging は device JWT が無く 401/403) でも、
+                // アプリ起動中は always_on に関係なく WS を張る (device_id は present)。
+                // 以前は `?: return@launch` でここで即 return し、RoomWatcher が一切
+                // 起動しなかった (staging で着信 WS が繋がらない主因、Refs rust-alc-api#480)。
+                if (response == null) {
+                    Log.i(TAG, "settings unavailable — starting RoomWatcher anyway (device_id present)")
+                    runOnUiThread { startRoomWatcher() }
+                    registerFcmTokenIfNeeded(deviceId)
+                    return@launch
+                }
 
                 val json = org.json.JSONObject(response)
                 val callEnabled = json.optBoolean("call_enabled", false)
@@ -1414,8 +1425,11 @@ class WebViewActivity : AppCompatActivity() {
                 try {
                     val prefs = getSharedPreferences("device_settings", MODE_PRIVATE)
                     val deviceId = prefs.getString("device_id", null) ?: "(none)"
+                    val appVer = runCatching {
+                        packageManager.getPackageInfo(packageName, 0).versionName
+                    }.getOrNull() ?: "?"
                     val lines = mutableListOf<String>()
-                    lines.add("env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
+                    lines.add("app=$appVer env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
                         "settings_token=${!prefs.getString("settings_token", null).isNullOrEmpty()} " +
                         "always_on=${prefs.getBoolean("always_on", true)} " +
                         "fcm_registered=${!prefs.getString("fcm_token_registered", null).isNullOrEmpty()} " +
