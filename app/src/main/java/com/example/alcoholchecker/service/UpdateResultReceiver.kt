@@ -4,9 +4,12 @@ import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.app.NotificationManager
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.example.alcoholchecker.R
 import com.example.alcoholchecker.net.DeviceToken
 import com.example.alcoholchecker.net.EnvironmentStore
 import java.net.HttpURLConnection
@@ -18,18 +21,25 @@ class UpdateResultReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "UpdateResult"
         const val ACTION_INSTALL_RESULT = "com.example.alcoholchecker.INSTALL_RESULT"
+        // OtaUpdateService が作成する既存チャンネルを流用 (失敗通知用)
+        private const val CHANNEL_ID = "ota_update"
+        private const val FAILURE_NOTIFICATION_ID = 9002
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
+        val versionName = intent.getStringExtra("version_name") ?: ""
 
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> {
                 Log.d(TAG, "Package install succeeded")
+                UpdateStatusStore.save(
+                    context, ok = true, status = status, message = "",
+                    hint = "更新に成功しました", versionName = versionName
+                )
                 applyDeviceOwnerSettings(context)
                 val versionCode = intent.getIntExtra("version_code", 0)
-                val versionName = intent.getStringExtra("version_name") ?: ""
                 reportVersionToBackend(context, versionCode, versionName)
             }
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
@@ -41,9 +51,35 @@ class UpdateResultReceiver : BroadcastReceiver() {
                 }
             }
             else -> {
+                // 従来は Log.e だけで通知も UI フィードバックも無く「無音の失敗」になっていた。
+                // 署名不一致 (STATUS_FAILURE_CONFLICT / message に signature) は最頻の失敗。
                 Log.e(TAG, "Package install failed: status=$status, message=$message")
+                val hint = when {
+                    status == PackageInstaller.STATUS_FAILURE_CONFLICT ||
+                        message.contains("signature", ignoreCase = true) ->
+                        "署名が異なるため上書き更新できません。" +
+                            "一度アプリをアンインストールしてから再インストールしてください。"
+                    else -> "インストールに失敗しました (status=$status)"
+                }
+                UpdateStatusStore.save(
+                    context, ok = false, status = status, message = message,
+                    hint = hint, versionName = versionName
+                )
+                showFailureNotification(context, hint)
             }
         }
+    }
+
+    private fun showFailureNotification(context: Context, text: String) {
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("アプリ更新エラー")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setAutoCancel(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            ?.notify(FAILURE_NOTIFICATION_ID, notification)
     }
 
     private fun reportVersionToBackend(context: Context, versionCode: Int, versionName: String) {
