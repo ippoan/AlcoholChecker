@@ -1396,6 +1396,49 @@ class WebViewActivity : AppCompatActivity() {
             }
         }
 
+        /** デバイス設定タブ「診断ログを送信」用。provisioning.log の末尾と現在の device 状態を
+         *  signaling worker (/device-log) に送る (observability で読める、WS 未接続の切り分け用)。 */
+        @JavascriptInterface
+        fun uploadDeviceLog() {
+            Log.i(TAG, "uploadDeviceLog")
+            Thread {
+                try {
+                    val prefs = getSharedPreferences("device_settings", MODE_PRIVATE)
+                    val deviceId = prefs.getString("device_id", null) ?: "(none)"
+                    val lines = mutableListOf<String>()
+                    lines.add("env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
+                        "settings_token=${!prefs.getString("settings_token", null).isNullOrEmpty()} " +
+                        "always_on=${prefs.getBoolean("always_on", true)} " +
+                        "fcm_registered=${!prefs.getString("fcm_token_registered", null).isNullOrEmpty()} " +
+                        "roomWatcher=${roomWatcher != null} wsConnected=${roomWatcher?.isConnected == true}")
+                    val file = java.io.File(getExternalFilesDir(null), "provisioning.log")
+                    if (file.exists()) {
+                        file.readLines().takeLast(80).forEach { lines.add(it) }
+                    }
+                    val url = java.net.URI(SIGNALING_URL.trimEnd('/') + "/device-log").toURL()
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    try {
+                        conn.requestMethod = "POST"
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.doOutput = true
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 8000
+                        val body = org.json.JSONObject().apply {
+                            put("device_id", deviceId)
+                            put("tag", "fileLog")
+                            put("lines", org.json.JSONArray(lines))
+                        }
+                        conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                        Log.i(TAG, "uploadDeviceLog: HTTP ${conn.responseCode}")
+                    } finally {
+                        conn.disconnect()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "uploadDeviceLog failed: ${e.message}")
+                }
+            }.start()
+        }
+
         @JavascriptInterface
         fun scanQrCode() {
             runOnUiThread {
