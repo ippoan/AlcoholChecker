@@ -1261,6 +1261,15 @@ class WebViewActivity : AppCompatActivity() {
                 .getString("device_id", "") ?: ""
         }
 
+        /** WebView (alc-app) の appVersion (NUXT_PUBLIC_APP_VERSION、staging=commit SHA /
+         *  release=tag) を native に渡す。診断ログの web= に出して web/native の版ズレを
+         *  observability だけで判別するため。旧 web は呼ばない (guard 済) (Refs rust-alc-api#480)。 */
+        @JavascriptInterface
+        fun setWebVersion(version: String) {
+            getSharedPreferences("device_settings", MODE_PRIVATE)
+                .edit().putString("web_app_version", version).apply()
+        }
+
         /** web claim フローで得た auth-worker device credential を native に渡す。
          *  DeviceToken がこれを使って device JWT を mint する (lockdown 対応、
          *  Refs rust-alc-api#434 / #480)。無いと settings / register-fcm-token 等の
@@ -1461,8 +1470,9 @@ class WebViewActivity : AppCompatActivity() {
                     // (= register-fcm-token 403 / settings 401 の切り分け用、Refs rust-alc-api#480)。
                     val hasCred = !prefs.getString("auth_device_id", null).isNullOrEmpty() &&
                         !prefs.getString("device_secret", null).isNullOrEmpty()
+                    val webVer = prefs.getString("web_app_version", null)?.take(12) ?: "?"
                     val lines = mutableListOf<String>()
-                    lines.add("app=$appVer env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
+                    lines.add("app=$appVer web=$webVer env=${EnvironmentStore.get(this@WebViewActivity)} device_id=$deviceId " +
                         "settings_token=${!prefs.getString("settings_token", null).isNullOrEmpty()} " +
                         "device_cred=$hasCred " +
                         "always_on=${prefs.getBoolean("always_on", true)} " +
