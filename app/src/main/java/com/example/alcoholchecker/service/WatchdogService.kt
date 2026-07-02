@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.util.Log
 import com.example.alcoholchecker.call.IncomingCallActivity
 import com.example.alcoholchecker.call.RoomWatcher
+import com.example.alcoholchecker.net.DeviceToken
 import com.example.alcoholchecker.ui.webview.WebViewActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -138,6 +139,11 @@ class WatchdogService : Service() {
                         prefs.getString("settings_token", null)
                             ?.takeIf { it.isNotEmpty() }
                             ?.let { conn.setRequestProperty("X-Device-Token", it) }
+                        // lockdown 対応: device JWT を Bearer で送る (Refs ippoan/rust-alc-api#480)。
+                        // 無いと alc-app 側 createDeviceProxyHandler が rust 直叩き fallback に落ち、
+                        // Cloud Run IAM lockdown 後は 403 になる。
+                        DeviceToken.get(this@WatchdogService)
+                            ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                         try {
                             if (conn.responseCode != 200) return@launch
                             conn.inputStream.bufferedReader().readText()

@@ -148,6 +148,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         prefs.getString("settings_token", null)
                             ?.takeIf { it.isNotEmpty() }
                             ?.let { conn.setRequestProperty("X-Device-Token", it) }
+                        // lockdown 対応: device JWT を Bearer で送る (Refs ippoan/rust-alc-api#480)。
+                        // 無いと alc-app 側 createDeviceProxyHandler が rust 直叩き fallback に落ち、
+                        // Cloud Run IAM lockdown 後は 403 になる。
+                        DeviceToken.get(this@MyFirebaseMessagingService)
+                            ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                         try {
                             if (conn.responseCode != 200) return@launch
                             conn.inputStream.bufferedReader().readText()

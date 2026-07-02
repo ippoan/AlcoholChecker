@@ -910,6 +910,15 @@ class WebViewActivity : AppCompatActivity() {
                                     if (settingsToken.isNotEmpty()) {
                                         put("alc_device_settings_token", settingsToken)
                                     }
+                                    // web app 側 useDeviceToken.ts (KIOSK_DEVICE_ID_KEY /
+                                    // KIOSK_DEVICE_SECRET_KEY) が読む kiosk device credential。
+                                    // これが無いと getDeviceJwt() が常に null → 測定送信等の
+                                    // data API が X-Tenant-ID 直叩きに倒れ、lockdown 後 403 になる
+                                    // (Refs ippoan/rust-alc-api#480)。
+                                    if (authDeviceId.isNotEmpty() && deviceSecret.isNotEmpty()) {
+                                        put("alc_kiosk_device_id", authDeviceId)
+                                        put("alc_kiosk_device_secret", deviceSecret)
+                                    }
                                 }
                                 binding.webView.loadUrl("$BASE_URL/")
                                 fetchDeviceSettingsAndAutoStart()
