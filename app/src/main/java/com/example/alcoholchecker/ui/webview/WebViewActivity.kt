@@ -1384,6 +1384,18 @@ class WebViewActivity : AppCompatActivity() {
             return """{"versionCode":$code,"versionName":"${info.versionName}"}"""
         }
 
+        /** デバイス設定タブの「更新」ボタン用。releases/latest の APK を DL・インストールする
+         *  (OtaUpdateService の既定 DEFAULT_APK_URL)。download_url を渡さないので最新安定版。 */
+        @JavascriptInterface
+        fun checkForUpdate() {
+            Log.i(TAG, "checkForUpdate: starting OTA to releases/latest")
+            runOnUiThread {
+                Toast.makeText(this@WebViewActivity, "最新版を確認・ダウンロードします...", Toast.LENGTH_SHORT).show()
+                val intent = Intent(this@WebViewActivity, com.example.alcoholchecker.service.OtaUpdateService::class.java)
+                startForegroundService(intent)
+            }
+        }
+
         @JavascriptInterface
         fun scanQrCode() {
             runOnUiThread {
