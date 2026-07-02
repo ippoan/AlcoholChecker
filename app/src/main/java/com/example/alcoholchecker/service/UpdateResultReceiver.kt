@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import com.example.alcoholchecker.net.DeviceToken
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -63,6 +64,11 @@ class UpdateResultReceiver : BroadcastReceiver() {
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
+                // lockdown 対応: device JWT を Bearer で送る (Refs ippoan/rust-alc-api#480)。
+                // 無いと alc-app 側 createDeviceProxyHandler が rust 直叩き fallback に落ち、
+                // Cloud Run IAM lockdown 後は 403 になる。
+                DeviceToken.get(context)
+                    ?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
                 conn.doOutput = true
                 conn.connectTimeout = 10_000
                 conn.readTimeout = 10_000
