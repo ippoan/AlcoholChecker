@@ -276,7 +276,19 @@ class WebViewActivity : AppCompatActivity() {
         if (env != EnvironmentStore.get(this)) {
             EnvironmentStore.set(this, env)
             DeviceToken.clearCache()
-            fileLog("environment switched to $env (host=$host)")
+            // 環境切替時は前環境の device 資格情報を破棄する。device_id / settings_token /
+            // FCM 登録済みマーク / kiosk credential は環境 (別 DB) ごとに別物で、残すと切替先で
+            // 「別 id での WS 接続 / FCM 登録」になり WS未接続・FCM未 を引き起こす。直後の
+            // device-claim が setDeviceId で新環境の値を再セットする (Refs ippoan/rust-alc-api#480)。
+            getSharedPreferences("device_settings", MODE_PRIVATE).edit()
+                .remove("device_id")
+                .remove("settings_token")
+                .remove("fcm_token_registered")
+                .remove("auth_device_id")
+                .remove("device_secret")
+                .apply()
+            stopRoomWatcher()
+            fileLog("environment switched to $env (host=$host), cleared stale device creds")
         }
     }
 
@@ -1217,6 +1229,25 @@ class WebViewActivity : AppCompatActivity() {
         fun getDeviceId(): String {
             return getSharedPreferences("device_settings", MODE_PRIVATE)
                 .getString("device_id", "") ?: ""
+        }
+
+        /** 端末登録を native 側で完全にリセットする (デバイス設定タブのリセットボタン用)。
+         *  device_id / settings_token / FCM 登録済みマーク / kiosk credential を消し、
+         *  RoomWatcher を停止する。WebView 側の localStorage は呼び出し元 (deactivateDevice)
+         *  がクリアする。再登録すると新しい device_id が setDeviceId で入る
+         *  (Refs ippoan/rust-alc-api#480)。 */
+        @JavascriptInterface
+        fun resetDeviceRegistration() {
+            Log.i(TAG, "resetDeviceRegistration")
+            getSharedPreferences("device_settings", MODE_PRIVATE).edit()
+                .remove("device_id")
+                .remove("settings_token")
+                .remove("fcm_token_registered")
+                .remove("auth_device_id")
+                .remove("device_secret")
+                .apply()
+            DeviceToken.clearCache()
+            runOnUiThread { stopRoomWatcher() }
         }
 
         /** WebView (alc-app) の登録フローで得た settings_token を native 側に同期する。
