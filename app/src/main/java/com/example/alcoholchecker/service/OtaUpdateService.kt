@@ -8,6 +8,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.net.Uri
@@ -64,6 +65,10 @@ class OtaUpdateService : Service() {
                 downloadAndInstall(downloadUrl, targetVersionCode, targetVersionName)
             } catch (e: Exception) {
                 Log.e(TAG, "OTA update failed", e)
+                UpdateStatusStore.save(
+                    this, ok = false, status = -2, message = e.message ?: "download failed",
+                    hint = "更新に失敗しました: ${e.message}", versionName = targetVersionName
+                )
                 showErrorNotification("更新に失敗しました: ${e.message}")
             } finally {
                 stopSelf()
@@ -112,6 +117,24 @@ class OtaUpdateService : Service() {
             }
 
             Log.d(TAG, "APK downloaded: ${apkFile.length()} bytes")
+
+            // 事前署名検証 (fail-fast)。DL した APK の署名が端末上のアプリと異なると
+            // Android は install を必ず拒否する (Device Owner の silent install でも不可)。
+            // 無駄な install 試行と「無音の失敗」を避け、user に手動アンインストールを促す。
+            // ※ 自動アンインストールは行わない (自己 uninstall は不可 + 運用方針)。
+            if (isSignatureMismatch(apkFile)) {
+                Log.e(TAG, "APK signature mismatch — in-place update is impossible")
+                val hint = "署名が異なるため上書き更新できません。" +
+                    "一度アプリをアンインストールしてから再インストールしてください。"
+                UpdateStatusStore.save(
+                    this, ok = false, status = -3, message = "signature mismatch",
+                    hint = hint, versionName = versionName
+                )
+                showErrorNotification(hint)
+                apkFile.delete()
+                return
+            }
+
             updateNotification("インストール中...")
 
             if (isDeviceOwner()) {
@@ -208,6 +231,52 @@ class OtaUpdateService : Service() {
             Log.w(TAG, "Could not start installer activity: ${e.message}")
         }
     }
+
+    /** DL した APK の署名 cert(SHA-256) と、現在インストール済みアプリの署名を比較する。
+     *  一致 or どちらか取得不能 (初回 install 等、比較不能) の場合は false (= install を試みる)。 */
+    private fun isSignatureMismatch(apkFile: File): Boolean {
+        val installed = installedCertSha256() ?: return false
+        val incoming = archiveCertSha256(apkFile.absolutePath) ?: return false
+        val mismatch = installed != incoming
+        if (mismatch) {
+            Log.w(TAG, "signature mismatch: installed=$installed incoming=$incoming")
+        }
+        return mismatch
+    }
+
+    private fun installedCertSha256(): String? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            info.signingInfo?.apkContentsSigners?.firstOrNull()?.let { sha256(it.toByteArray()) }
+        } else {
+            @Suppress("DEPRECATION")
+            val info = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            @Suppress("DEPRECATION")
+            info.signatures?.firstOrNull()?.let { sha256(it.toByteArray()) }
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "installedCertSha256 failed: ${e.message}")
+        null
+    }
+
+    private fun archiveCertSha256(path: String): String? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = packageManager.getPackageArchiveInfo(path, PackageManager.GET_SIGNING_CERTIFICATES)
+            info?.signingInfo?.apkContentsSigners?.firstOrNull()?.let { sha256(it.toByteArray()) }
+        } else {
+            @Suppress("DEPRECATION")
+            val info = packageManager.getPackageArchiveInfo(path, PackageManager.GET_SIGNATURES)
+            @Suppress("DEPRECATION")
+            info?.signatures?.firstOrNull()?.let { sha256(it.toByteArray()) }
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "archiveCertSha256 failed: ${e.message}")
+        null
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
 
     private fun isDeviceOwner(): Boolean {
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager

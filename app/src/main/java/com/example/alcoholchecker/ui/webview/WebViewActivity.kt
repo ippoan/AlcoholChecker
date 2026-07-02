@@ -1397,6 +1397,14 @@ class WebViewActivity : AppCompatActivity() {
             }
         }
 
+        /** デバイス設定タブが OTA 更新の最終結果 (成功/失敗/理由) を表示するために読む。
+         *  UpdateStatusStore が書いた JSON をそのまま返す。未実施なら "{}"。 */
+        @JavascriptInterface
+        fun getLastUpdateResult(): String {
+            return getSharedPreferences("device_settings", MODE_PRIVATE)
+                .getString(com.example.alcoholchecker.service.UpdateStatusStore.KEY, null) ?: "{}"
+        }
+
         /** デバイス設定タブ「診断ログを送信」用。provisioning.log の末尾と現在の device 状態を
          *  signaling worker (/device-log) に送る (observability で読める、WS 未接続の切り分け用)。 */
         @JavascriptInterface
