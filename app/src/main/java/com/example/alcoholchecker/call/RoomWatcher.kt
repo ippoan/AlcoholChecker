@@ -65,6 +65,7 @@ class RoomWatcher(
         val deviceId = prefs.getString("device_id", null)
         if (deviceId.isNullOrEmpty()) {
             Log.w(TAG, "No device_id in SharedPreferences, cannot connect")
+            postLog(null, "connect skipped: no device_id in SharedPreferences")
             scheduleReconnect()
             return
         }
@@ -74,10 +75,12 @@ class RoomWatcher(
             .trimEnd('/') + "/watch-rooms?device_id=$deviceId"
 
         Log.d(TAG, "Connecting to $wsUrl")
+        postLog(deviceId, "connecting to $wsUrl")
 
         wsClient = object : WebSocketClient(URI(wsUrl)) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 Log.d(TAG, "Connected to watch-rooms")
+                postLog(deviceId, "onOpen: connected to watch-rooms")
                 isConnected = true
                 onConnectionStateChanged?.invoke(true)
                 sendSchedule()
@@ -91,6 +94,7 @@ class RoomWatcher(
 
             override fun onClose(code: Int, reason: String?, remote: Boolean) {
                 Log.d(TAG, "Disconnected: code=$code reason=$reason")
+                postLog(deviceId, "onClose: code=$code reason=$reason remote=$remote")
                 isConnected = false
                 onConnectionStateChanged?.invoke(false)
                 scheduleReconnect()
@@ -98,8 +102,36 @@ class RoomWatcher(
 
             override fun onError(ex: Exception?) {
                 Log.e(TAG, "WebSocket error", ex)
+                postLog(deviceId, "onError: ${ex?.javaClass?.simpleName}: ${ex?.message}")
             }
         }.also { it.connect() }
+    }
+
+    /** RoomWatcher の挙動を signaling worker (/device-log) に送る (fire-and-forget、診断用)。
+     *  observability で「no device_id / connecting / onOpen / onError / onClose」を追える。 */
+    private fun postLog(deviceId: String?, message: String) {
+        Thread {
+            try {
+                val url = java.net.URI(signalingUrl.trimEnd('/') + "/device-log").toURL()
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.connectTimeout = 5000
+                    conn.readTimeout = 5000
+                    val body = org.json.JSONObject().apply {
+                        put("device_id", deviceId ?: "(none)")
+                        put("tag", "RoomWatcher")
+                        put("message", message)
+                    }
+                    conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                    conn.responseCode // fire request
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (_: Exception) { /* 診断ログ送信の失敗は無視 */ }
+        }.start()
     }
 
     private fun handleMessage(message: String) {
