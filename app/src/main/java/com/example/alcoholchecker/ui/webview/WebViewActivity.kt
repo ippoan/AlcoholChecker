@@ -1037,16 +1037,19 @@ class WebViewActivity : AppCompatActivity() {
                     // 常時接続 (着信ON/OFFはサーバー側 shouldNotify() で制御、テスト着信は常に通る)
                     runOnUiThread { startRoomWatcher() }
                     Log.i(TAG, "Auto-started RoomWatcher (call_enabled=$callEnabled, always_on=$alwaysOn, filtering is server-side)")
-                    // FCM トークン登録
-                    registerFcmTokenIfNeeded(deviceId)
-                    // バージョン報告
-                    reportVersionToBackend(deviceId)
                 } else if (status == "active" && !alwaysOn) {
                     Log.i(TAG, "always_on=false — stopping background services")
                     runOnUiThread { stopRoomWatcher() }
                     stopService(Intent(this@WebViewActivity, WatchdogService::class.java))
                 } else {
                     Log.i(TAG, "status=$status — not starting RoomWatcher")
+                }
+                // FCM トークン登録 + バージョン報告は always_on / RoomWatcher に依存させない。
+                // FCM は着信のフォールバック配信経路なので always_on=OFF でも登録しておく
+                // (以前は if(shouldRun) 内にあり「常時起動なのに FCM未」の原因になっていた)。
+                if (status == "active") {
+                    registerFcmTokenIfNeeded(deviceId)
+                    reportVersionToBackend(deviceId)
                 }
                 // Watchdog状態をバックエンドに報告
                 reportWatchdogState(deviceId, shouldRun)
@@ -1060,6 +1063,8 @@ class WebViewActivity : AppCompatActivity() {
                 } else {
                     Log.i(TAG, "Skipping RoomWatcher from fallback (cached always_on=false)")
                 }
+                // 設定取得に失敗しても FCM 登録は試みる (着信フォールバック経路の確保)
+                registerFcmTokenIfNeeded(deviceId)
             }
         }
     }
@@ -1204,6 +1209,19 @@ class WebViewActivity : AppCompatActivity() {
         @JavascriptInterface
         fun isCallConnected(): Boolean {
             return roomWatcher?.isConnected == true
+        }
+
+        /** 診断用: FCM の状態を JSON で返す (デバイス設定タブの状態表示用)。
+         *  token_present = Firebase トークンを取得済みか、registered = backend 登録済みか。 */
+        @JavascriptInterface
+        fun getFcmStatus(): String {
+            val prefs = getSharedPreferences("device_settings", MODE_PRIVATE)
+            val token = prefs.getString("fcm_token", null)
+            val registered = prefs.getString("fcm_token_registered", null)
+            val tokenPresent = !token.isNullOrEmpty()
+            // token と registered が一致していれば「登録済み」(token 変更後の未再登録を区別)。
+            val isRegistered = tokenPresent && token == registered
+            return """{"token_present":$tokenPresent,"registered":$isRegistered}"""
         }
 
         @SuppressLint("HardwareIds")
