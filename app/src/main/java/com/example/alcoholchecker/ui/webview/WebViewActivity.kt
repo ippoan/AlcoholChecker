@@ -1032,17 +1032,22 @@ class WebViewActivity : AppCompatActivity() {
                     .putString("schedule", callSchedule.toString())
                     .apply()
 
-                val shouldRun = status == "active" && alwaysOn
-                if (shouldRun) {
+                // RoomWatcher (アプリ内 WS) は起動中は always_on に関係なく常時接続する。
+                // always_on はバックグラウンド常駐 (WatchdogService) のみを制御する。
+                // (以前は shouldRun = active && alwaysOn で、always_on=false だと
+                //  アプリ起動中でも WS が張られず着信できなかった。)
+                if (status == "active") {
                     // 常時接続 (着信ON/OFFはサーバー側 shouldNotify() で制御、テスト着信は常に通る)
                     runOnUiThread { startRoomWatcher() }
                     Log.i(TAG, "Auto-started RoomWatcher (call_enabled=$callEnabled, always_on=$alwaysOn, filtering is server-side)")
-                } else if (status == "active" && !alwaysOn) {
-                    Log.i(TAG, "always_on=false — stopping background services")
-                    runOnUiThread { stopRoomWatcher() }
-                    stopService(Intent(this@WebViewActivity, WatchdogService::class.java))
+                    if (!alwaysOn) {
+                        // WS は張ったまま、バックグラウンド常駐だけ止める
+                        Log.i(TAG, "always_on=false — stopping WatchdogService (background) only")
+                        stopService(Intent(this@WebViewActivity, WatchdogService::class.java))
+                    }
                 } else {
                     Log.i(TAG, "status=$status — not starting RoomWatcher")
+                    runOnUiThread { stopRoomWatcher() }
                 }
                 // FCM トークン登録 + バージョン報告は always_on / RoomWatcher に依存させない。
                 // FCM は着信のフォールバック配信経路なので always_on=OFF でも登録しておく
@@ -1051,18 +1056,14 @@ class WebViewActivity : AppCompatActivity() {
                     registerFcmTokenIfNeeded(deviceId)
                     reportVersionToBackend(deviceId)
                 }
-                // Watchdog状態をバックエンドに報告
-                reportWatchdogState(deviceId, shouldRun)
+                // Watchdog状態 (バックグラウンド常駐 = active && always_on) をバックエンドに報告
+                reportWatchdogState(deviceId, status == "active" && alwaysOn)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to fetch device settings: ${e.message}")
-                // オフラインフォールバック: キャッシュの always_on を参照
-                val cachedAlwaysOn = prefs.getBoolean("always_on", true)
-                if (cachedAlwaysOn) {
-                    runOnUiThread { startRoomWatcher() }
-                    Log.i(TAG, "Auto-started RoomWatcher from fallback (cached always_on=true)")
-                } else {
-                    Log.i(TAG, "Skipping RoomWatcher from fallback (cached always_on=false)")
-                }
+                // オフラインフォールバック: 設定取得に失敗しても、アプリ起動中は
+                // always_on に関係なく WS を張る (device_id はこの時点で present)。
+                runOnUiThread { startRoomWatcher() }
+                Log.i(TAG, "Auto-started RoomWatcher from fallback (offline, always_on ignored)")
                 // 設定取得に失敗しても FCM 登録は試みる (着信フォールバック経路の確保)
                 registerFcmTokenIfNeeded(deviceId)
             }
