@@ -8,6 +8,7 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
 import com.example.alcoholchecker.net.DeviceToken
+import com.example.alcoholchecker.net.EnvironmentStore
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -17,7 +18,6 @@ class UpdateResultReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "UpdateResult"
         const val ACTION_INSTALL_RESULT = "com.example.alcoholchecker.INSTALL_RESULT"
-        private const val API_BASE = "https://alc-app.m-tama-ramu.workers.dev"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -60,7 +60,7 @@ class UpdateResultReceiver : BroadcastReceiver() {
 
         thread {
             try {
-                val url = URL("$API_BASE/api/devices/report-version")
+                val url = URL("${EnvironmentStore.apiBase(context)}/api/devices/report-version")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "PUT"
                 conn.setRequestProperty("Content-Type", "application/json")
