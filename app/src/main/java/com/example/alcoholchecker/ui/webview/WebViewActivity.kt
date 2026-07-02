@@ -35,6 +35,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import java.security.MessageDigest
 import com.example.alcoholchecker.ble.BleBridgeServer
 import com.example.alcoholchecker.ble.BleDeviceManager
 import com.example.alcoholchecker.databinding.ActivityWebviewBinding
@@ -1259,6 +1260,24 @@ class WebViewActivity : AppCompatActivity() {
         fun getDeviceId(): String {
             return getSharedPreferences("device_settings", MODE_PRIVATE)
                 .getString("device_id", "") ?: ""
+        }
+
+        /** re-pair (再認証) の TOFU hardware bind 用識別子 (Refs rust-alc-api#495 PR4)。
+         *  ANDROID_ID の生値は端末に一意な識別子として外部送出しない方針のため、
+         *  SHA-256 ハッシュを送る (backend の `devices.hardware_id` は「ANDROID_ID の
+         *  SHA-256、生値保存しない」設計、docs/plan-device-repair.md 参照)。
+         *  取得失敗時は空文字を返し、web 側は web install id にフォールバックする。 */
+        @JavascriptInterface
+        fun getHardwareId(): String {
+            return try {
+                val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                if (androidId.isNullOrEmpty()) return ""
+                val digest = MessageDigest.getInstance("SHA-256").digest(androidId.toByteArray())
+                digest.joinToString("") { "%02x".format(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "getHardwareId failed: ${e.message}")
+                ""
+            }
         }
 
         /** WebView (alc-app) の appVersion (NUXT_PUBLIC_APP_VERSION、staging=commit SHA /
